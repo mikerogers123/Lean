@@ -32,7 +32,7 @@ using QuantConnect.Util;
 
 namespace QuantConnect.Tests.Engine.DataFeeds
 {
-    [TestFixture, Parallelizable(ParallelScope.Fixtures)]
+    [TestFixture, Parallelizable(ParallelScope.None)]
     public class LiveCoarseUniverseTests
     {
         [Test]
@@ -119,7 +119,10 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                     if (coarseTimes.Contains(time))
                     {
                         // lets wait for coarse to emit
-                        emitted.WaitOne();
+                        if (!emitted.WaitOne(TimeSpan.FromMilliseconds(5000)))
+                        {
+                            throw new TimeoutException("Timeout waiting for coarse to emit");
+                        }
                     }
                     var activeSecuritiesCount = algorithm.ActiveSecurities.Count;
 

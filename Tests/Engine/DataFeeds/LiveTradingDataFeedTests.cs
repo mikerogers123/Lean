@@ -158,11 +158,11 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             stopwatch.Stop();
 
             Console.WriteLine("Total ticks: " + count.Value);
-            Assert.GreaterOrEqual(count.Value, 400000);
+            Assert.GreaterOrEqual(count.Value, 700000);
             Console.WriteLine("Elapsed time: " + stopwatch.Elapsed);
             var ticksPerSec = count.Value / stopwatch.Elapsed.TotalSeconds;
             Console.WriteLine("Ticks/sec: " + ticksPerSec);
-            Assert.GreaterOrEqual(ticksPerSec, 40000);
+            Assert.GreaterOrEqual(ticksPerSec, 70000);
             var ticksPerSecPerSymbol = (count.Value / stopwatch.Elapsed.TotalSeconds) / symbolCount;
             Console.WriteLine("Ticks/sec/symbol: " + ticksPerSecPerSymbol);
             Assert.GreaterOrEqual(ticksPerSecPerSymbol, 100);
@@ -1346,7 +1346,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             var emittedData = new ManualResetEvent(false);
 
             var dataQueueStarted = new ManualResetEvent(false);
-            var dataQueueHandler = new FuncDataQueueHandler(fdqh =>
+            _dataQueueHandler = new FuncDataQueueHandler(fdqh =>
             {
                 if (exchangeTimeZone == null)
                 {
@@ -1443,7 +1443,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 return dataPoints;
             }, timeProvider);
 
-            var feed = new TestableLiveTradingDataFeed(dataQueueHandler);
+            var feed = new TestableLiveTradingDataFeed(_dataQueueHandler);
 
             var algorithm = new QCAlgorithm();
             algorithm.SetDateTime(timeProvider.GetUtcNow());
@@ -1522,7 +1522,10 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 mapFileProvider, new LocalDiskFactorFileProvider(mapFileProvider), new DefaultDataProvider(),
                 dataManager, _synchronizer, new TestDataChannelProvider());
 
-            dataQueueStarted.WaitOne();
+            if (!dataQueueStarted.WaitOne(TimeSpan.FromMilliseconds(5000)))
+            {
+                throw new TimeoutException("Timeout waiting for IDQH to start");
+            }
             var cancellationTokenSource = new CancellationTokenSource();
             try
             {
@@ -1552,7 +1555,8 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                                 actualTicksReceived++;
 
                                 ConsoleWriteLine(
-                                    $"{algorithm.Time} - Tick received, value: {tick.Value} {tick.TickType} (count: {actualTicksReceived})");
+                                    $"{algorithm.Time} - Tick received, value: {tick.Value} {tick.TickType} (count: {actualTicksReceived})"
+                                );
                             }
                         }
 
@@ -1561,7 +1565,8 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                             actualAuxPointsReceived++;
 
                             ConsoleWriteLine(
-                                $"{algorithm.Time} - Dividend received, value: {timeSlice.Slice.Dividends[symbol].Value} (count: {actualAuxPointsReceived})");
+                                $"{algorithm.Time} - Dividend received, value: {timeSlice.Slice.Dividends[symbol].Value} (count: {actualAuxPointsReceived})"
+                            );
                         }
 
                         var customDataCount = timeSlice.Slice.Get<T>().Count;
@@ -1570,7 +1575,8 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                             actualCustomPointsReceived += customDataCount;
 
                             ConsoleWriteLine(
-                                $"{algorithm.Time} - Custom received, value: {timeSlice.Slice.Get<T>().First().Value} (count: {actualCustomPointsReceived})");
+                                $"{algorithm.Time} - Custom received, value: {timeSlice.Slice.Get<T>().First().Value} (count: {actualCustomPointsReceived})"
+                            );
                         }
                     }
                     else
@@ -1580,7 +1586,8 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                             actualTradeBarsReceived++;
 
                             ConsoleWriteLine(
-                                $"{algorithm.Time} - TradeBar received, value: {timeSlice.Slice.Bars[symbol].Value} (count: {actualTradeBarsReceived})");
+                                $"{algorithm.Time} - TradeBar received, value: {timeSlice.Slice.Bars[symbol].Value} (count: {actualTradeBarsReceived})"
+                            );
                         }
 
                         if (timeSlice.Slice.Dividends.ContainsKey(symbol))
@@ -1588,7 +1595,8 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                             actualAuxPointsReceived++;
 
                             ConsoleWriteLine(
-                                $"{algorithm.Time} - Dividend received, value: {timeSlice.Slice.Dividends[symbol].Value} (count: {actualAuxPointsReceived})");
+                                $"{algorithm.Time} - Dividend received, value: {timeSlice.Slice.Dividends[symbol].Value} (count: {actualAuxPointsReceived})"
+                            );
                         }
 
                         if (timeSlice.Slice.QuoteBars.ContainsKey(symbol))
@@ -1596,7 +1604,8 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                             actualQuoteBarsReceived++;
 
                             ConsoleWriteLine(
-                                $"{algorithm.Time} - QuoteBar received, value: {timeSlice.Slice.QuoteBars[symbol].Value} (count: {actualQuoteBarsReceived})");
+                                $"{algorithm.Time} - QuoteBar received, value: {timeSlice.Slice.QuoteBars[symbol].Value} (count: {actualQuoteBarsReceived})"
+                            );
                         }
 
                         if (symbol.SecurityType == SecurityType.Base)
@@ -1607,7 +1616,8 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                                 actualCustomPointsReceived += customDataCount;
 
                                 ConsoleWriteLine(
-                                    $"{algorithm.Time} - Custom received, value: {timeSlice.Slice.Get<T>().First().Value} (count: {actualCustomPointsReceived})");
+                                    $"{algorithm.Time} - Custom received, value: {timeSlice.Slice.Get<T>().First().Value} (count: {actualCustomPointsReceived})"
+                                );
                             }
                         }
                     }
@@ -1651,7 +1661,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                     ConsoleWriteLine($"Algorithm time set to {currentTime.ConvertFromUtc(algorithmTimeZone)}");
 
                     // let's avoid race conditions and give time for the funDataQueueHandler thread to distribute the data among the consolidators
-                    Thread.Sleep(10);
+                    Thread.Sleep(20);
 
                     if (currentTime.ConvertFromUtc(algorithmTimeZone) > endDate)
                     {
@@ -1665,15 +1675,20 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 dataQueueStarted.DisposeSafely();
 
                 Log.Trace(
-                    $"SliceCount:{sliceCount} - PriceData: Enqueued:{actualPricePointsEnqueued} TicksReceived:{actualTicksReceived}");
+                    $"SliceCount:{sliceCount} - PriceData: Enqueued:{actualPricePointsEnqueued} TicksReceived:{actualTicksReceived}"
+                );
                 Log.Trace(
-                    $"SliceCount:{sliceCount} - PriceData: Enqueued:{actualPricePointsEnqueued} TradeBarsReceived:{actualTradeBarsReceived}");
+                    $"SliceCount:{sliceCount} - PriceData: Enqueued:{actualPricePointsEnqueued} TradeBarsReceived:{actualTradeBarsReceived}"
+                );
                 Log.Trace(
-                    $"SliceCount:{sliceCount} - PriceData: Enqueued:{actualPricePointsEnqueued} QuoteBarsReceived:{actualQuoteBarsReceived}");
+                    $"SliceCount:{sliceCount} - PriceData: Enqueued:{actualPricePointsEnqueued} QuoteBarsReceived:{actualQuoteBarsReceived}"
+                );
                 Log.Trace(
-                    $"SliceCount:{sliceCount} - AuxData: Enqueued:{actualAuxPointsEnqueued} Received:{actualAuxPointsReceived}");
+                    $"SliceCount:{sliceCount} - AuxData: Enqueued:{actualAuxPointsEnqueued} Received:{actualAuxPointsReceived}"
+                );
                 Log.Trace(
-                    $"SliceCount:{sliceCount} - AuxData: Enqueued:{actualPricePointsEnqueued} Received:{actualCustomPointsReceived}");
+                    $"SliceCount:{sliceCount} - AuxData: Enqueued:{actualPricePointsEnqueued} Received:{actualCustomPointsReceived}"
+                );
 
                 Assert.IsTrue(actualPricePointsEnqueued > 0);
 
@@ -1703,6 +1718,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                                 Assert.IsTrue(actualQuoteBarsReceived > 0);
 
                             }
+
                             break;
 
                         case SecurityType.Forex:
@@ -1730,17 +1746,24 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 Assert.AreEqual(expectedCustomPointsReceived, actualCustomPointsReceived);
 
                 dataManager.RemoveAllSubscriptions();
+                _dataQueueHandler.DisposeSafely();
             }
             catch (Exception exception)
             {
                 Log.Error(exception);
-                dataQueueHandler.DisposeSafely();
-                feed.Exit();
-                cancellationTokenSource.Cancel();
-                dataManager.RemoveAllSubscriptions();
                 if (!shouldThrowException)
                 {
                     throw;
+                }
+            }
+            finally
+            {
+                _dataQueueHandler.DisposeSafely();
+                feed?.Exit();
+                dataManager?.RemoveAllSubscriptions();
+                if (!cancellationTokenSource.IsCancellationRequested)
+                {
+                    cancellationTokenSource.Cancel();
                 }
             }
         }
@@ -1780,11 +1803,15 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             var futureSymbols = new HashSet<Symbol>();
             var optionSymbols = new HashSet<Symbol>();
 
-            var dataQueueHandler = new FuncDataQueueHandlerUniverseProvider(
+            _dataQueueHandler = new FuncDataQueueHandlerUniverseProvider(
                 fdqh =>
                 {
                     started.Set();
-                    timeAdvanced.WaitOne();
+                    if (!timeAdvanced.WaitOne(TimeSpan.FromMilliseconds(5000)))
+                    {
+                        Log.Error("Timeout waiting for time to advance");
+                        return Enumerable.Empty<BaseData>();
+                    }
 
                     if (exchangeTimeZone == null)
                     {
@@ -1903,7 +1930,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 },
                 timeProvider);
 
-            var feed = new TestableLiveTradingDataFeed(dataQueueHandler);
+            var feed = new TestableLiveTradingDataFeed(_dataQueueHandler);
 
             var algorithm = new QCAlgorithm();
             algorithm.SetDateTime(timeProvider.GetUtcNow());
@@ -1975,7 +2002,10 @@ namespace QuantConnect.Tests.Engine.DataFeeds
 
             DateTime? lastSecurityChangedTime = null;
 
-            started.WaitOne();
+            if (!started.WaitOne(TimeSpan.FromMilliseconds(5000)))
+            {
+                throw new TimeoutException("Timeout waiting for IDQH to start");
+            }
 
             var interval = TimeSpan.FromMilliseconds(100);
             Timer timer = null;
@@ -2118,7 +2148,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             }
 
             dataManager.RemoveAllSubscriptions();
-            dataQueueHandler.DisposeSafely();
+            _dataQueueHandler.DisposeSafely();
             timeAdvanced.DisposeSafely();
             started.DisposeSafely();
             timer.DisposeSafely();

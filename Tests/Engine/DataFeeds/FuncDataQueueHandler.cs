@@ -98,7 +98,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                         Thread.Sleep(1);
                     }
                 }
-            }, TaskCreationOptions.LongRunning);
+            });
         }
 
         /// <summary>
